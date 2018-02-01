@@ -8,12 +8,76 @@ setwd("~/gdrive/BearOmics2/EnrichmentAnalysis")
 load("../data/combData_20180127.RData")
 
 ########### Get Metabolite ChEBIs ###########
-idk<-combData$metabs$key
-write.table(idk$pubchem[complete.cases(idk$pubchem)],file="pubChems.txt",
-            row.names=FALSE,col.names=FALSE)
+metabKey<-combData$metabs$key
 
-curl("http://cts.fiehnlab.ucdavis.edu/service/convet/PubChem%20CID/ChEBI/10917802")
+# PubChem to ChEBI
+pcLook<-data.frame(pubchem=na.omit(unique(metabKey$pubchem)),ChEBI=NA)
+for(i in 1:nrow(pcLook)){
+  url1<-paste0("http://cts.fiehnlab.ucdavis.edu/service/convert/PubChem%20CID/chebi/",
+               pcLook$pubchem[i])
+  curl1<-curl_fetch_memory(url1)
+  curl2<-jsonlite::fromJSON(paste0(rawToChar(curl1$content)))
+  pcLook$ChEBI[i]<-gsub("CHEBI:","",paste0(unlist(curl2$result),collapse=";"))
+  print(i)
+}
+# KEGG to ChEBI
+keggLook<-data.frame(kegg=na.omit(unique(metabKey$kegg)),ChEBI=NA)
+keggLook<-keggLook %>% filter(keggLook$kegg!="")
+for(i in 1:nrow(keggLook)){
+  url1<-paste0("http://cts.fiehnlab.ucdavis.edu/service/convert/kegg/chebi/",
+               keggLook$kegg[i])
+  curl1<-curl_fetch_memory(url1)
+  curl2<-jsonlite::fromJSON(paste0(rawToChar(curl1$content)))
+  keggLook$ChEBI[i]<-gsub("CHEBI:","",paste0(unlist(curl2$result),collapse=";"))
+  print(i)
+}
+# HMDB to ChEBI
+hmdbLook<-data.frame(hmdb=na.omit(unique(metabKey$hmdb)),ChEBI=NA)
+hmdbLook<-hmdbLook %>% filter(hmdbLook$hmdb!="")
+for(i in 1:nrow(hmdbLook)){
+  url1<-paste0("http://cts.fiehnlab.ucdavis.edu/service/convert/Human%20Metabolome%20Database/chebi/",
+               hmdbLook$hmdb[i])
+  curl1<-curl_fetch_memory(url1)
+  curl2<-jsonlite::fromJSON(paste0(rawToChar(curl1$content)))
+  hmdbLook$ChEBI[i]<-gsub("CHEBI:","",paste0(unlist(curl2$result),collapse=";"))
+  print(i)
+}
+# CAS to ChEBI [LOH]
+casLook<-data.frame(cas=na.omit(unique(metabKey$cas)),ChEBI=NA)
+casLook<-casLook %>% filter(casLook$cas!="")
+for(i in 1:nrow(casLook)){
+  url1<-paste0("http://cts.fiehnlab.ucdavis.edu/service/convert/CAS/chebi/",
+               casLook$cas[i])
+  curl1<-curl_fetch_memory(url1)
+  curl2<-jsonlite::fromJSON(paste0(rawToChar(curl1$content)))
+  casLook$ChEBI[i]<-gsub("CHEBI:","",paste0(unlist(curl2$result),collapse=";"))
+  print(i)
+}
 
+# Add to metabolite key:
+metabKey$pubchem<-as.character(metabKey$pubchem)
+metabKey$pubchem[is.na(metabKey$pubchem)]<-""
+
+metabKey$ChEBI<-""
+for(i in 1:nrow(metabKey)){
+  tempChEBI<-""
+  if(metabKey$pubchem[i]!=""){
+    if(pcLook$ChEBI[pcLook$pubchem==metabKey$pubchem[i]]!=""){
+      tempChEBI<-pcLook$ChEBI[pcLook$pubchem==metabKey$pubchem[i]]
+    }
+  }
+  if(metabKey$kegg[i]!=""){
+    if(keggLook$ChEBI[keggLook$kegg==metabKey$kegg[i]]!=""){
+      tempChEBI<-paste(tempChEBI,keggLook$ChEBI[keggLook$kegg==metabKey$kegg[i]],sep="*")
+    }
+  }
+  if(metabKey$hmdb[i]!=""){
+    if(hmdbLook$ChEBI[hmdbLook$hmdb==metabKey$hmdb[i]]!=""){
+      tempChEBI<-paste(tempChEBI,hmdbLook$ChEBI[hmdbLook$hmdb==metabKey$hmdb[i]],sep="+")
+    }
+  }
+  metabKey$ChEBI[i]<-tempChEBI
+}
 
 ########### Example GSEA using ReactomePA ###########
 S_Up<-read.table(file="../data/CONTROL_UP_VS_CONTROL_S_ALL.txt",header=TRUE,sep="\t")
