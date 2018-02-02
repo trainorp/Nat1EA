@@ -42,28 +42,31 @@ for(i in 1:nrow(hmdbLook)){
   hmdbLook$ChEBI[i]<-gsub("CHEBI:","",paste0(unlist(curl2$result),collapse=";"))
   print(i)
 }
-# CAS to ChEBI [LOH]
+# CAS to ChEBI:
+metabKey$cas<-gsub("/","-",metabKey$cas)
 casLook<-data.frame(cas=na.omit(unique(metabKey$cas)),ChEBI=NA)
 casLook<-casLook %>% filter(casLook$cas!="")
 for(i in 1:nrow(casLook)){
-  url1<-paste0("http://cts.fiehnlab.ucdavis.edu/service/convert/CAS/chebi/",
-               casLook$cas[i])
-  curl1<-curl_fetch_memory(url1)
-  curl2<-jsonlite::fromJSON(paste0(rawToChar(curl1$content)))
-  casLook$ChEBI[i]<-gsub("CHEBI:","",paste0(unlist(curl2$result),collapse=";"))
+  multCas<-unlist(strsplit(casLook$cas[i],";"))
+  for(casi in multCas){
+    url1<-paste0("http://cts.fiehnlab.ucdavis.edu/service/convert/CAS/chebi/",casi)
+    curl1<-curl_fetch_memory(url1)
+    curl2<-jsonlite::fromJSON(paste0(rawToChar(curl1$content)))
+    casLook$ChEBI[i]<-gsub("CHEBI:","",paste0(unlist(curl2$result),collapse=";"))
+  }
   print(i)
 }
 
 # Add to metabolite key:
 metabKey$pubchem<-as.character(metabKey$pubchem)
 metabKey$pubchem[is.na(metabKey$pubchem)]<-""
-
+metabKey$cas[is.na(metabKey$cas)]<-""
 metabKey$ChEBI<-""
 for(i in 1:nrow(metabKey)){
   tempChEBI<-""
   if(metabKey$pubchem[i]!=""){
     if(pcLook$ChEBI[pcLook$pubchem==metabKey$pubchem[i]]!=""){
-      tempChEBI<-pcLook$ChEBI[pcLook$pubchem==metabKey$pubchem[i]]
+      tempChEBI<-paste(tempChEBI,pcLook$ChEBI[pcLook$pubchem==metabKey$pubchem[i]],sep="!")
     }
   }
   if(metabKey$kegg[i]!=""){
@@ -76,7 +79,18 @@ for(i in 1:nrow(metabKey)){
       tempChEBI<-paste(tempChEBI,hmdbLook$ChEBI[hmdbLook$hmdb==metabKey$hmdb[i]],sep="+")
     }
   }
+  if(metabKey$cas[i]!=""){
+    if(casLook$ChEBI[casLook$cas==metabKey$cas[i]]!=""){
+      tempChEBI<-paste(tempChEBI,casLook$ChEBI[casLook$hmdb==metabKey$hmdb[i]],sep="^")
+    }
+  }
   metabKey$ChEBI[i]<-tempChEBI
+}
+
+# Find unike ChEBIs only [LOH]:
+for(i in 1:nrow(metabKey))
+{
+  
 }
 
 ########### Example GSEA using ReactomePA ###########
