@@ -2,6 +2,7 @@
 library(tidyverse)
 library(ReactomePA)
 library(curl)
+library(reactome.db)
 
 options(stringsAsFactors=FALSE)
 setwd("~/gdrive/BearOmics2/EnrichmentAnalysis")
@@ -108,6 +109,32 @@ setwd("~/gdrive/BearOmics2/EnrichmentAnalysis")
 ########### Reload data ###########
 load("../data/combData_20180202.RData")
 metabKey<-combData$metabs$key
+
+# Reactome gene data:
+ensgReact<-read.table("Ensembl2Reactome_20180202.txt",comment.char="",sep="\t")
+names(ensgReact)<-c("ensg","pathID","url","pathName","evidCode","species")
+ensgReact<-ensgReact %>% filter(species=="Homo sapiens") %>% dplyr::select(-species)
+
+# Reactome compound data:
+chebiReact<-read.csv("ChEBI2Reactome_AllPathways_20180202.csv",header=FALSE)
+names(chebiReact)<-c("ChEBI","peID","peName","pathID","url","pathName","evidCode","species")
+chebiReact<-chebiReact %>% filter(species=="Homo sapiens") %>% dplyr::select(-species)
+
+# How many are in a Reactome pathway:
+metabKey$inReactome<-NA
+for(i in 1:nrow(metabKey)){
+  ChEBIs<-unlist(strsplit(metabKey$ChEBI[i],";"))
+  if(length(ChEBIs)>0){
+    temp2<-0
+    for(ChEBI in ChEBIs){
+      temp<-match(ChEBI,chebiReact$ChEBI,nomatch=0)
+      temp2<-temp2+ifelse(length(temp)==0 | temp==0,0,1)
+    }
+  }else{
+    temp2<-0
+  }
+  metabKey$inReactome[i]<-temp2
+}
 
 ########### Example GSEA using ReactomePA ###########
 S_Up<-read.table(file="../data/CONTROL_UP_VS_CONTROL_S_ALL.txt",header=TRUE,sep="\t")
