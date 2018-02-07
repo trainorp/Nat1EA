@@ -138,6 +138,8 @@ for(i in 1:nrow(metabKey)){
   metabKey$inReactome[i]<-temp2
 }
 
+########### Add / fix ChEBIs ###########
+
 ########### fgsea with custom set from Reactome ###########
 # Make list of sets
 chebiReact$ChEBI<-as.character(chebiReact$ChEBI)
