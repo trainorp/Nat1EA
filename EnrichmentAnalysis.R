@@ -141,7 +141,7 @@ for(i in 1:nrow(metabKey)){
 ########### Add / fix ChEBIs ###########
 metabKey2<-metabKey
 
-# Finished 1-20:
+# Finished 1-30:
 
 ########### fgsea with custom set from Reactome ###########
 # Make list of sets
