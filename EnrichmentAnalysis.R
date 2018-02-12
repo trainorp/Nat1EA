@@ -160,18 +160,23 @@ names(S_Up)[names(S_Up)=="log2FC.CONTROL_UP.CONTROL_S."]<-"logFC"
 S_Up<-S_Up %>% filter(p_value<.2)
 S_Up<-S_Up %>% arrange(p_value,desc(abs(logFC)))
 S_Up$order<-nrow(S_Up):1
-S_Up2<-S_Up
-S_Up2b<-S_Up2$order
-names(S_Up2b)<-S_Up2$ENTREZ.ID
 
 ########### Get KEGG data ###########
 # List of Pathways:
 keggPathways<-keggList("pathway","hsa")
 
-# Genes:
+# Pathway Genes:
 keggPathwayGenes<-keggLink("pathway","hsa")
+keggPathwayGenes<-data.frame(path=keggPathwayGenes,gene=names(keggPathwayGenes))
+keggPathwayGenes$gene<-gsub("hsa:","",keggPathwayGenes$gene)
+keggPathwayGenes$path<-gsub("pathway:","",keggPathwayGenes$path)
+keggGeneSet<-list()
+keggUniquePaths<-unique(keggPathwayGenes$path)
+for(path in keggUniquePaths){
+  keggGeneSet[[path]]<-unique(keggPathwayGenes$gene[keggPathwayGenes$path==path])
+}
 
-# Compounds:
+# Pathway Compounds:
 keggPathwayCompounds<-keggLink("pathway","cpd")
 keggPathwayCompounds<-data.frame(cpd=names(keggPathwayCompounds),path=keggPathwayCompounds)
 keggPathwayCompounds$cpd<-gsub("cpd:","",keggPathwayCompounds$cpd)
@@ -182,11 +187,28 @@ for(path in keggUniquePaths){
   keggMetabSet[[path]]<-unique(keggPathwayCompounds$cpd[keggPathwayCompounds$path==path])
 }
 
-########### KEGG Set Enrichment Analysis ###########
+########### KEGG Compound Set Enrichment Analysis ###########
 metabStats<-diffs$SvsU
 names(metabStats)<-diffs$kegg
 metabStats<-metabStats[!is.na(names(metabStats)) & names(metabStats)!=""]
+
+# Set enrichment analysis:
 KeggMetabGSEA<-fgsea(keggMetabSet,metabStats,nperm=10000,minSize=2,maxSize=Inf)
+
+########### KEGG Gene Set Enrichment Analysis ###########
+S_Up2<-S_Up
+geneStats<-S_Up2$order
+names(geneStats)<-S_Up2$ENTREZ.ID
+
+# Set enrichment analysis:
+KeggGeneGSEA<-fgsea(keggGeneSet,geneStats,nperm=10000,minSize=2,maxSize=Inf)
+
+########### KEGG Gene Set Enrichment Analysis ###########
+names(KeggMetabGSEA)<-paste("metab",names(KeggMetabGSEA),sep="_")
+KeggMetabGSEA$metab_pathway<-gsub("map","",KeggMetabGSEA$metab_pathway)
+names(KeggGeneGSEA)<-paste("gene",names(KeggGeneGSEA),sep="_")
+KeggGeneGSEA$gene_pathway<-gsub("path:hsa","",KeggGeneGSEA$gene_pathway)
+KeggGSEA<-KeggMetabGSEA %>% left_join(KeggGeneGSEA,by=c("metab_pathway"="gene_pathway"))
 
 ########### Add / fix ChEBIs ###########
 metabKey2<-metabKey
