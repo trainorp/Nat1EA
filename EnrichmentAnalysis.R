@@ -5,11 +5,13 @@ library(curl)
 library(reactome.db)
 library(fgsea)
 library(emmeans)
+library(KEGGREST)
 
 options(stringsAsFactors=FALSE)
 setwd("~/gdrive/BearOmics2/EnrichmentAnalysis")
 
 ########### Get Metabolite ChEBIs ###########
+## Start Not run
 load("../data/combData_20180127.RData")
 metabKey<-combData$metabs$key
 
@@ -107,6 +109,7 @@ rm(casLook,hmdbLook,keggLook,pcLook,casi,curl1,curl2,ChEBIs,i,url1,
    multCas,tempChEBI)
 combData$metabs$key<-metabKey
 save(combData,file="../data/combData_20180202.RData")
+## End Not run
 
 ########### Reload data ###########
 load("../data/combData_20180202.RData")
@@ -138,20 +141,7 @@ for(i in 1:nrow(metabKey)){
   metabKey$inReactome[i]<-temp2
 }
 
-########### Add / fix ChEBIs ###########
-metabKey2<-metabKey
-
-# Finished 1-30:
-
-########### fgsea with custom set from Reactome ###########
-# Make list of sets
-chebiReact$ChEBI<-as.character(chebiReact$ChEBI)
-metabSet<-list()
-uniquePaths<-unique(chebiReact$pathID)
-for(path in uniquePaths){
-  metabSet[[path]]<-unique(chebiReact$ChEBI[chebiReact$pathID==path])
-}
-
+########### Metabolite Differential abundance ###########
 metabExpr<-combData$metabs$expr
 metabExpr<-combData$metabs$pheno %>% dplyr::select(sid,pheno) %>% left_join(metabExpr)
 metabExpr$pheno<-factor(metabExpr$pheno,levels=levels(metabExpr$pheno)[c(2,1,3:6)])
@@ -163,14 +153,8 @@ for(i in 1:nrow(diffs)){
   diffs$SvsU[i]<-diff1$p.value[diff1$contrast=="Scrambled - Up"]
 }
 diffs<-metabKey %>% left_join(diffs,by=c("id"="metab"))
-diffs$ChEBI2<-sapply(strsplit(diffs$ChEBI,";"),function(x) x[1])
-metabStats<-diffs$SvsU
-names(metabStats)<-diffs$ChEBI2
-metabStats<-metabStats[!is.na(names(metabStats))]
 
-metabGSEA<-fgsea(metabSet,metabStats,nperm = 1000)
-
-########### Example GSEA using ReactomePA ###########
+########### Transcript Differential Expression ############
 S_Up<-read.table(file="../data/CONTROL_UP_VS_CONTROL_S_ALL.txt",header=TRUE,sep="\t")
 names(S_Up)[names(S_Up)=="log2FC.CONTROL_UP.CONTROL_S."]<-"logFC"
 S_Up<-S_Up %>% filter(p_value<.2)
@@ -180,6 +164,53 @@ S_Up2<-S_Up
 S_Up2b<-S_Up2$order
 names(S_Up2b)<-S_Up2$ENTREZ.ID
 
+########### Get KEGG data ###########
+# List of Pathways:
+keggPathways<-keggList("pathway","hsa")
+
+# Genes:
+keggPathwayGenes<-keggLink("pathway","hsa")
+
+# Compounds:
+keggPathwayCompounds<-keggLink("pathway","cpd")
+keggPathwayCompounds<-data.frame(cpd=names(keggPathwayCompounds),path=keggPathwayCompounds)
+keggPathwayCompounds$cpd<-gsub("cpd:","",keggPathwayCompounds$cpd)
+keggPathwayCompounds$path<-gsub("path:","",keggPathwayCompounds$path)
+keggMetabSet<-list()
+keggUniquePaths<-unique(keggPathwayCompounds$path)
+for(path in keggUniquePaths){
+  keggMetabSet[[path]]<-unique(keggPathwayCompounds$cpd[keggPathwayCompounds$path==path])
+}
+
+########### KEGG Set Enrichment Analysis ###########
+metabStats<-diffs$SvsU
+names(metabStats)<-diffs$kegg
+metabStats<-metabStats[!is.na(names(metabStats)) & names(metabStats)!=""]
+KeggMetabGSEA<-fgsea(keggMetabSet,metabStats,nperm=10000,minSize=2,maxSize=Inf)
+
+########### Add / fix ChEBIs ###########
+metabKey2<-metabKey
+
+# Finished 1-30:
+
+
+########### fgsea with custom set from Reactome ###########
+diffs$ChEBI2<-sapply(strsplit(diffs$ChEBI,";"),function(x) x[1])
+
+# Make list of sets
+chebiReact$ChEBI<-as.character(chebiReact$ChEBI)
+metabSet<-list()
+uniquePaths<-unique(chebiReact$pathID)
+for(path in uniquePaths){
+  metabSet[[path]]<-unique(chebiReact$ChEBI[chebiReact$pathID==path])
+}
+metabStats<-diffs$SvsU
+names(metabStats)<-diffs$ChEBI2
+metabStats<-metabStats[!is.na(names(metabStats))]
+
+metabGSEA<-fgsea(metabSet,metabStats,nperm = 1000)
+
+########### Example GSEA using ReactomePA ###########
 # Over representation (hypergeometric):
 S_Up3<-S_Up %>% filter(p_value<.05)
 over_S_Up<-as.data.frame(enrichPathway(S_Up3$ENTREZ.ID,pvalueCutoff=.2,readable=TRUE))
