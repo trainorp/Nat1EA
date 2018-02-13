@@ -145,21 +145,25 @@ for(i in 1:nrow(metabKey)){
 metabExpr<-combData$metabs$expr
 metabExpr<-combData$metabs$pheno %>% dplyr::select(sid,pheno) %>% left_join(metabExpr)
 metabExpr$pheno<-factor(metabExpr$pheno,levels=levels(metabExpr$pheno)[c(2,1,3:6)])
-diffs<-data.frame(metab=names(metabExpr)[3:ncol(metabExpr)],SvsU=NA)
+diffs<-data.frame(metab=names(metabExpr)[3:ncol(metabExpr)],SvsU=NA,SvsUFC=NA)
 for(i in 1:nrow(diffs)){
   df1<-data.frame(pheno=metabExpr$pheno,metab=metabExpr[,diffs$metab[i]])
   lm1<-lm(metab~pheno,data=df1)
   diff1<-as.data.frame(pairs(emmeans(lm1,"pheno")))
   diffs$SvsU[i]<-diff1$p.value[diff1$contrast=="Scrambled - Up"]
+  diffs$SvsUFC[i]<-diff1$estimate[diff1$contrast=="Scrambled - Up"]
 }
 diffs<-metabKey %>% left_join(diffs,by=c("id"="metab"))
+diffs<-diffs %>% arrange(SvsU)
+diffs$order<-nrow(diffs):1
 
 ########### Transcript Differential Expression ############
 S_Up<-read.table(file="../data/CONTROL_UP_VS_CONTROL_S_ALL.txt",header=TRUE,sep="\t")
 names(S_Up)[names(S_Up)=="log2FC.CONTROL_UP.CONTROL_S."]<-"logFC"
-S_Up<-S_Up %>% filter(p_value<.2)
+#S_Up<-S_Up %>% filter(p_value<.5)
 S_Up<-S_Up %>% arrange(p_value,desc(abs(logFC)))
-S_Up$order<-1:nrow(S_Up)
+S_Up$order<-nrow(S_Up):1
+S_Up$revOrder<-1:nrow(S_Up)
 
 ########### Get KEGG data ###########
 # List of Pathways:
@@ -190,7 +194,7 @@ for(path in keggUniquePaths){
 }
 
 ########### KEGG Compound Set Enrichment Analysis ###########
-metabStats<-diffs$SvsU
+metabStats<-diffs$order
 names(metabStats)<-diffs$kegg
 metabStats<-metabStats[!is.na(names(metabStats)) & names(metabStats)!=""]
 
@@ -212,6 +216,16 @@ names(KeggGeneGSEA)<-paste("gene",names(KeggGeneGSEA),sep="_")
 KeggGeneGSEA$gene_pathway<-gsub("path:hsa","",KeggGeneGSEA$gene_pathway)
 KeggGSEA<-KeggMetabGSEA %>% left_join(KeggGeneGSEA,by=c("metab_pathway"="gene_pathway"))
 KeggGSEA<-keggPathways %>% left_join(KeggGSEA,by=c("pathId"="metab_pathway"))
+
+# metabolism example: map01040
+plotEnrichment(keggMetabSet[["map00310"]],metabStats)
+plotEnrichment(keggGeneSet[["path:hsa00310"]],geneStats)
+path00310_Metabs<-diffs[diffs$kegg %in% keggMetabSet[["map00310"]],]
+path00310_Genes<-S_Up[S_Up$ENTREZ.ID %in% keggGeneSet[["path:hsa00310"]],]
+write.table(path00310_Metabs[,c("kegg","SvsUFC")],file="path00310_Metabs.txt",
+            row.names=FALSE,sep="\t")
+write.table(path00310_Genes[,c("ENTREZ.ID","logFC")],file="path00310_Genes.txt",
+            row.names=FALSE,sep="\t")
 
 ########### Add / fix ChEBIs ###########
 metabKey2<-metabKey
