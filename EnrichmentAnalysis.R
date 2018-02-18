@@ -217,7 +217,7 @@ KeggGeneGSEA$gene_pathway<-gsub("path:hsa","",KeggGeneGSEA$gene_pathway)
 KeggGSEA<-KeggMetabGSEA %>% left_join(KeggGeneGSEA,by=c("metab_pathway"="gene_pathway"))
 KeggGSEA<-keggPathways %>% left_join(KeggGSEA,by=c("pathId"="metab_pathway"))
 
-# metabolism example: map01040
+# metabolism example: Lysine degredation map00310
 plotEnrichment(keggMetabSet[["map00310"]],metabStats)
 plotEnrichment(keggGeneSet[["path:hsa00310"]],geneStats)
 path00310_Metabs<-diffs[diffs$kegg %in% keggMetabSet[["map00310"]],]
