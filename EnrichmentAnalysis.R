@@ -6,6 +6,7 @@ library(reactome.db)
 library(fgsea)
 library(emmeans)
 library(KEGGREST)
+library(pathview)
 
 options(stringsAsFactors=FALSE)
 setwd("~/gdrive/BearOmics2/EnrichmentAnalysis")
@@ -154,6 +155,9 @@ for(i in 1:nrow(diffs)){
   diffs$SvsUFC[i]<-diff1$estimate[diff1$contrast=="Scrambled - Up"]
 }
 diffs<-metabKey %>% left_join(diffs,by=c("id"="metab"))
+temp1<-diffs[diffs$biochemical=="carnitine",]
+temp1$kegg<-"C00487"
+diffs<-rbind(diffs,temp1)
 diffs<-diffs %>% arrange(SvsU)
 diffs$order<-nrow(diffs):1
 
@@ -226,6 +230,18 @@ write.table(path00310_Metabs[,c("kegg","SvsUFC")],file="path00310_Metabs.txt",
             row.names=FALSE,sep="\t")
 write.table(path00310_Genes[,c("ENTREZ.ID","logFC")],file="path00310_Genes.txt",
             row.names=FALSE,sep="\t")
+
+########### Pathview ###########
+geneData_path00310<-as.numeric(path00310_Genes$logFC)
+names(geneData_path00310)<-as.character(path00310_Genes$ENTREZ.ID)
+cpdData_path00310<-as.numeric(path00310_Metabs$SvsUFC)
+names(cpdData_path00310)<-as.character(path00310_Metabs$kegg)
+pv.out<-pathview(gene.data=geneData_path00310,cpd.data=cpdData_path00310,
+            pathway.id="00310",species="hsa",out.suffix="mysuf",
+            keys.align="y",kegg.native=T,key.pos="topright",
+            limit=list(gene=c(-2,2),cpd=c(-2,2)),bins=list(gene=14,cpd=14),
+            high=list(gene="green",cpd="blue"),mid=list(gene="grey29",cpd="grey29"),
+            low=list(gene="red",cpd="#FFB533"))
 
 ########### Add / fix ChEBIs ###########
 metabKey2<-metabKey
