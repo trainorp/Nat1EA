@@ -146,28 +146,62 @@ for(i in 1:nrow(metabKey)){
 metabExpr<-combData$metabs$expr
 metabExpr<-combData$metabs$pheno %>% dplyr::select(sid,pheno) %>% left_join(metabExpr)
 metabExpr$pheno<-factor(metabExpr$pheno,levels=levels(metabExpr$pheno)[c(2,1,3:6)])
-diffs<-data.frame(metab=names(metabExpr)[3:ncol(metabExpr)],SvsU=NA,SvsUFC=NA)
-for(i in 1:nrow(diffs)){
-  df1<-data.frame(pheno=metabExpr$pheno,metab=metabExpr[,diffs$metab[i]])
+comparisons<-c("Up","Down","CRISPR-5-50","CRISPR-2-12","CRISPR-2-19")
+diffs<-expand.grid(metab=names(metabExpr)[3:ncol(metabExpr)],ref="Scrambled",
+                   comparison=comparisons,FC=NA,pVal=NA,stringsAsFactors=FALSE)
+metabs<-names(metabExpr)[3:ncol(metabExpr)]
+for(i in 1:length(metabs)){
+  df1<-data.frame(pheno=metabExpr$pheno,metab=metabExpr[,metabs[i]])
   lm1<-lm(metab~pheno,data=df1)
   diff1<-as.data.frame(pairs(emmeans(lm1,"pheno")))
-  diffs$SvsU[i]<-diff1$p.value[diff1$contrast=="Scrambled - Up"]
-  diffs$SvsUFC[i]<-diff1$estimate[diff1$contrast=="Scrambled - Up"]
+  for(comparison in comparisons){
+    diffs$FC[diffs$metab==metabs[i] & diffs$comparison==comparison]<-
+      diff1$estimate[diff1$contrast==paste0("Scrambled - ",comparison)]
+    diffs$pVal[diffs$metab==metabs[i] & diffs$comparison==comparison]<-
+      diff1$p.value[diff1$contrast==paste0("Scrambled - ",comparison)]
+  }
+  print(i)
 }
+FCs<-diffs %>% dplyr::select(-pVal,-ref) %>% spread(comparison,FC)
+names(FCs)[names(FCs)!="metab"]<-paste("FC",names(FCs)[names(FCs)!="metab"],sep="_")
+pVals<-diffs %>% dplyr::select(-FC,-ref) %>% spread(comparison,pVal)
+names(pVals)[names(pVals)!="metab"]<-paste("pVal",names(pVals)[names(pVals)!="metab"],sep="_")
+diffs<-FCs %>% left_join(pVals)
+
 diffs<-metabKey %>% left_join(diffs,by=c("id"="metab"))
 temp1<-diffs[diffs$biochemical=="carnitine",]
 temp1$kegg<-"C00487"
 diffs<-rbind(diffs,temp1)
-diffs<-diffs %>% arrange(SvsU)
-diffs$order<-nrow(diffs):1
+
+# Rank orders
+for(comparison in comparisons){
+  ord<-order(diffs[,paste0("pVal_",comparison)],diffs[,paste0("FC_",comparison)],
+             decreasing=c(TRUE,FALSE))
+  diffs<-diffs[ord,]
+  diffs<-cbind(diffs,ord=1:nrow(diffs))
+  names(diffs)[names(diffs)=="ord"]<-paste0("ord_",comparison)
+}
 
 ########### Transcript Differential Expression ############
 S_Up<-read.table(file="../data/CONTROL_UP_VS_CONTROL_S_ALL.txt",header=TRUE,sep="\t")
+S_Down<-read.table(file="../data/T_DOWN_VS_CONTROL_S_ALL.txt",header=TRUE,sep="\t")
+S_CRISPR219<-read.table(file="../data/T_2_19_VS_CONTROL_S_ALL.txt",header=TRUE,sep="\t")
+S_CRISPR212<-read.table(file="../data/T_2_12_VS_CONTROL_S_ALL.txt",header=TRUE,sep="\t")
+S_CRISPR550<-read.table(file="../data/T_5_50_VS_CONTROL_S_ALL.txt",header=TRUE,sep="\t")
+
 names(S_Up)[names(S_Up)=="log2FC.CONTROL_UP.CONTROL_S."]<-"logFC"
-#S_Up<-S_Up %>% filter(p_value<.5)
-S_Up<-S_Up %>% arrange(p_value,desc(abs(logFC)))
-S_Up$order<-nrow(S_Up):1
-S_Up$revOrder<-1:nrow(S_Up)
+names(S_Down)[names(S_Down)=="log2FC.T_DOWN.CONTROL_S."]<-"logFC"
+names(S_CRISPR219)[names(S_CRISPR219)=="log2FC.T_2_19.CONTROL_S."]<-"logFC"
+names(S_CRISPR212)[names(S_CRISPR212)=="log2FC.T_2_12.CONTROL_S."]<-"logFC"
+names(S_CRISPR550)[names(S_CRISPR550)=="log2FC.T_5_50.CONTROL_S."]<-"logFC"
+
+comparisons2<-c("S_Up","S_Down","S_CRISPR550","S_CRISPR212","S_CRISPR219")
+for(comparison in comparisons2){
+  temp1<-get(comparison)
+  temp1<-temp1 %>% arrange(p_value,desc(abs(logFC)))
+  temp1$order<-nrow(temp1):1
+  assign(comparison,temp1)
+}
 
 ########### Get KEGG data ###########
 # List of Pathways:
@@ -198,12 +232,14 @@ for(path in keggUniquePaths){
 }
 
 ########### KEGG Compound Set Enrichment Analysis ###########
-metabStats<-diffs$order
+comparison<-"CRISPR-5-50"
+metabStats<-diffs[,paste0("ord_",comparison)]
 names(metabStats)<-diffs$kegg
 metabStats<-metabStats[!is.na(names(metabStats)) & names(metabStats)!=""]
 
 # Set enrichment analysis:
 KeggMetabGSEA<-fgsea(keggMetabSet,metabStats,nperm=10000,minSize=2,maxSize=Inf)
+# [LOH]
 
 ########### KEGG Gene Set Enrichment Analysis ###########
 S_Up2<-S_Up
