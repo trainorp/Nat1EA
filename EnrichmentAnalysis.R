@@ -6,6 +6,7 @@ library(reactome.db)
 library(fgsea)
 library(emmeans)
 library(KEGGREST)
+library(pathview)
 
 options(stringsAsFactors=FALSE)
 setwd("~/gdrive/BearOmics2/EnrichmentAnalysis")
@@ -145,25 +146,62 @@ for(i in 1:nrow(metabKey)){
 metabExpr<-combData$metabs$expr
 metabExpr<-combData$metabs$pheno %>% dplyr::select(sid,pheno) %>% left_join(metabExpr)
 metabExpr$pheno<-factor(metabExpr$pheno,levels=levels(metabExpr$pheno)[c(2,1,3:6)])
-diffs<-data.frame(metab=names(metabExpr)[3:ncol(metabExpr)],SvsU=NA,SvsUFC=NA)
-for(i in 1:nrow(diffs)){
-  df1<-data.frame(pheno=metabExpr$pheno,metab=metabExpr[,diffs$metab[i]])
+comparisons<-c("Up","Down","CRISPR-5-50","CRISPR-2-12","CRISPR-2-19")
+diffs<-expand.grid(metab=names(metabExpr)[3:ncol(metabExpr)],ref="Scrambled",
+                   comparison=comparisons,FC=NA,pVal=NA,stringsAsFactors=FALSE)
+metabs<-names(metabExpr)[3:ncol(metabExpr)]
+for(i in 1:length(metabs)){
+  df1<-data.frame(pheno=metabExpr$pheno,metab=metabExpr[,metabs[i]])
   lm1<-lm(metab~pheno,data=df1)
   diff1<-as.data.frame(pairs(emmeans(lm1,"pheno")))
-  diffs$SvsU[i]<-diff1$p.value[diff1$contrast=="Scrambled - Up"]
-  diffs$SvsUFC[i]<-diff1$estimate[diff1$contrast=="Scrambled - Up"]
+  for(comparison in comparisons){
+    diffs$FC[diffs$metab==metabs[i] & diffs$comparison==comparison]<-
+      diff1$estimate[diff1$contrast==paste0("Scrambled - ",comparison)]
+    diffs$pVal[diffs$metab==metabs[i] & diffs$comparison==comparison]<-
+      diff1$p.value[diff1$contrast==paste0("Scrambled - ",comparison)]
+  }
+  print(i)
 }
+FCs<-diffs %>% dplyr::select(-pVal,-ref) %>% spread(comparison,FC)
+names(FCs)[names(FCs)!="metab"]<-paste("FC",names(FCs)[names(FCs)!="metab"],sep="_")
+pVals<-diffs %>% dplyr::select(-FC,-ref) %>% spread(comparison,pVal)
+names(pVals)[names(pVals)!="metab"]<-paste("pVal",names(pVals)[names(pVals)!="metab"],sep="_")
+diffs<-FCs %>% left_join(pVals)
+
 diffs<-metabKey %>% left_join(diffs,by=c("id"="metab"))
-diffs<-diffs %>% arrange(SvsU)
-diffs$order<-nrow(diffs):1
+temp1<-diffs[diffs$biochemical=="carnitine",]
+temp1$kegg<-"C00487"
+diffs<-rbind(diffs,temp1)
+
+# Rank orders
+for(comparison in comparisons){
+  ord<-order(diffs[,paste0("pVal_",comparison)],diffs[,paste0("FC_",comparison)],
+             decreasing=c(TRUE,FALSE))
+  diffs<-diffs[ord,]
+  diffs<-cbind(diffs,ord=1:nrow(diffs))
+  names(diffs)[names(diffs)=="ord"]<-paste0("ord_",comparison)
+}
 
 ########### Transcript Differential Expression ############
 S_Up<-read.table(file="../data/CONTROL_UP_VS_CONTROL_S_ALL.txt",header=TRUE,sep="\t")
+S_Down<-read.table(file="../data/T_DOWN_VS_CONTROL_S_ALL.txt",header=TRUE,sep="\t")
+S_CRISPR219<-read.table(file="../data/T_2_19_VS_CONTROL_S_ALL.txt",header=TRUE,sep="\t")
+S_CRISPR212<-read.table(file="../data/T_2_12_VS_CONTROL_S_ALL.txt",header=TRUE,sep="\t")
+S_CRISPR550<-read.table(file="../data/T_5_50_VS_CONTROL_S_ALL.txt",header=TRUE,sep="\t")
+
 names(S_Up)[names(S_Up)=="log2FC.CONTROL_UP.CONTROL_S."]<-"logFC"
-#S_Up<-S_Up %>% filter(p_value<.5)
-S_Up<-S_Up %>% arrange(p_value,desc(abs(logFC)))
-S_Up$order<-nrow(S_Up):1
-S_Up$revOrder<-1:nrow(S_Up)
+names(S_Down)[names(S_Down)=="log2FC.T_DOWN.CONTROL_S."]<-"logFC"
+names(S_CRISPR219)[names(S_CRISPR219)=="log2FC.T_2_19.CONTROL_S."]<-"logFC"
+names(S_CRISPR212)[names(S_CRISPR212)=="log2FC.T_2_12.CONTROL_S."]<-"logFC"
+names(S_CRISPR550)[names(S_CRISPR550)=="log2FC.T_5_50.CONTROL_S."]<-"logFC"
+
+comparisons2<-c("S_Up","S_Down","S_CRISPR550","S_CRISPR212","S_CRISPR219")
+for(comparison in comparisons2){
+  temp1<-get(comparison)
+  temp1<-temp1 %>% arrange(p_value,desc(abs(logFC)))
+  temp1$order<-nrow(temp1):1
+  assign(comparison,temp1)
+}
 
 ########### Get KEGG data ###########
 # List of Pathways:
@@ -193,39 +231,97 @@ for(path in keggUniquePaths){
   keggMetabSet[[path]]<-unique(keggPathwayCompounds$cpd[keggPathwayCompounds$path==path])
 }
 
-########### KEGG Compound Set Enrichment Analysis ###########
-metabStats<-diffs$order
-names(metabStats)<-diffs$kegg
-metabStats<-metabStats[!is.na(names(metabStats)) & names(metabStats)!=""]
-
-# Set enrichment analysis:
-KeggMetabGSEA<-fgsea(keggMetabSet,metabStats,nperm=10000,minSize=2,maxSize=Inf)
-
-########### KEGG Gene Set Enrichment Analysis ###########
-S_Up2<-S_Up
-geneStats<-S_Up2$order
-names(geneStats)<-S_Up2$ENTREZ.ID
-
-# Set enrichment analysis:
-KeggGeneGSEA<-fgsea(keggGeneSet,geneStats,nperm=10000,minSize=2,maxSize=Inf)
-
 ########### KEGG Set Enrichment Analysis ###########
-names(KeggMetabGSEA)<-paste("metab",names(KeggMetabGSEA),sep="_")
-KeggMetabGSEA$metab_pathway<-gsub("map","",KeggMetabGSEA$metab_pathway)
-names(KeggGeneGSEA)<-paste("gene",names(KeggGeneGSEA),sep="_")
-KeggGeneGSEA$gene_pathway<-gsub("path:hsa","",KeggGeneGSEA$gene_pathway)
-KeggGSEA<-KeggMetabGSEA %>% left_join(KeggGeneGSEA,by=c("metab_pathway"="gene_pathway"))
-KeggGSEA<-keggPathways %>% left_join(KeggGSEA,by=c("pathId"="metab_pathway"))
+comparisonDf<-as.data.frame(cbind(comparisons,comparisons2))
+for(i in 1:nrow(comparisonDf)){
+  # Which comparison (separate for metabolites vs. transcripts)
+  comparison<-comparisonDf$comparisons[i]
+  comparison2<-comparisonDf$comparisons2[i]
+  
+  ########### KEGG Metabolite Set Enrichment Analysis ###########
+  metabStats<-diffs[,paste0("ord_",comparison)]
+  names(metabStats)<-diffs$kegg
+  metabStats<-metabStats[!is.na(names(metabStats)) & names(metabStats)!=""]
+  
+  # Set enrichment analysis:
+  KeggMetabGSEA<-fgsea(keggMetabSet,metabStats,nperm=10000,minSize=2,maxSize=Inf)
+  
+  ########### KEGG Gene Set Enrichment Analysis ###########
+  geneDf<-get(comparison2)
+  geneStats<-geneDf$order
+  names(geneStats)<-geneDf$ENTREZ.ID
+  
+  # Set enrichment analysis:
+  KeggGeneGSEA<-fgsea(keggGeneSet,geneStats,nperm=10000,minSize=2,maxSize=Inf)
+  
+  ########### Joined Metabolite & Gene Set Analysis ###########
+  names(KeggMetabGSEA)<-paste("metab",names(KeggMetabGSEA),sep="_")
+  KeggMetabGSEA$metab_pathway<-gsub("map","",KeggMetabGSEA$metab_pathway)
+  names(KeggGeneGSEA)<-paste("gene",names(KeggGeneGSEA),sep="_")
+  KeggGeneGSEA$gene_pathway<-gsub("path:hsa","",KeggGeneGSEA$gene_pathway)
+  KeggGSEA<-KeggMetabGSEA %>% left_join(KeggGeneGSEA,by=c("metab_pathway"="gene_pathway"))
+  KeggGSEA<-keggPathways %>% left_join(KeggGSEA,by=c("pathId"="metab_pathway"))
+  KeggGSEA$minNES<-apply(KeggGSEA[,c("metab_NES","gene_NES")],1,function(x) min(x,na.rm=TRUE))
+  KeggGSEA<-KeggGSEA[KeggGSEA$minNES<Inf,]
+  KeggGSEA$metab_leadingEdge<-
+    sapply(KeggGSEA$metab_leadingEdge,function(x) paste(x,collapse=";"))
+  KeggGSEA$gene_leadingEdge<-
+    sapply(KeggGSEA$gene_leadingEdge,function(x) paste(x,collapse=";"))
+  write.csv(KeggGSEA,row.names=FALSE,
+            file=paste0("~/gdrive/BearOmics2/EnrichmentAnalysis/Tables/",comparison,".csv"))
+  
+  ########### Pathview ###########
+  pathList<-unique(KeggGSEA$pathId)
+  setwd("~/gdrive/BearOmics2/EnrichmentAnalysis/KEGGplots/")
+  badPath<-c()
+  for(path in pathList){
+    # Metabolite data:
+    path_Metabs<-diffs[diffs$kegg %in% keggMetabSet[[paste0("map",path)]],]
+    cpdData<-path_Metabs[,paste0("FC_",comparison)]
+    names(cpdData)<-path_Metabs$kegg
+    
+    # Gene data:
+    path_Genes<-geneDf[geneDf$ENTREZ.ID %in% keggGeneSet[[paste0("path:hsa",path)]],]
+    geneData<-as.numeric(path_Genes$logFC)
+    names(geneData)<-as.character(path_Genes$ENTREZ.ID)
+    
+    tryCatch({
+      pv.out<-pathview(gene.data=geneData,cpd.data=cpdData,
+                       pathway.id=path,species="hsa",out.suffix=paste0(comparison),
+                       keys.align="y",kegg.native=T,key.pos="topright",
+                       limit=list(gene=c(-2,2),cpd=c(-2,2)),bins=list(gene=14,cpd=14),
+                       high=list(gene="green",cpd="blue"),mid=list(gene="grey50",cpd="grey50"),
+                       low=list(gene="red",cpd="#FFB533"))
+    },
+    error=function(e){
+      badPath<-c(badPath,path)
+      return(badPath)
+    }
+    )
+  }
+}
 
 # metabolism example: Lysine degredation map00310
-plotEnrichment(keggMetabSet[["map00310"]],metabStats)
-plotEnrichment(keggGeneSet[["path:hsa00310"]],geneStats)
-path00310_Metabs<-diffs[diffs$kegg %in% keggMetabSet[["map00310"]],]
-path00310_Genes<-S_Up[S_Up$ENTREZ.ID %in% keggGeneSet[["path:hsa00310"]],]
-write.table(path00310_Metabs[,c("kegg","SvsUFC")],file="path00310_Metabs.txt",
-            row.names=FALSE,sep="\t")
-write.table(path00310_Genes[,c("ENTREZ.ID","logFC")],file="path00310_Genes.txt",
-            row.names=FALSE,sep="\t")
+# plotEnrichment(keggMetabSet[["map00310"]],metabStats)
+# plotEnrichment(keggGeneSet[["path:hsa00310"]],geneStats)
+# path00310_Metabs<-diffs[diffs$kegg %in% keggMetabSet[["map00310"]],]
+# path00310_Genes<-S_Up[S_Up$ENTREZ.ID %in% keggGeneSet[["path:hsa00310"]],]
+# write.table(path00310_Metabs[,c("kegg","SvsUFC")],file="path00310_Metabs.txt",
+#             row.names=FALSE,sep="\t")
+# write.table(path00310_Genes[,c("ENTREZ.ID","logFC")],file="path00310_Genes.txt",
+#             row.names=FALSE,sep="\t")
+
+########### Ex Pathview ###########
+geneData_path00310<-as.numeric(path00310_Genes$logFC)
+names(geneData_path00310)<-as.character(path00310_Genes$ENTREZ.ID)
+cpdData_path00310<-as.numeric(path00310_Metabs$SvsUFC)
+names(cpdData_path00310)<-as.character(path00310_Metabs$kegg)
+pv.out<-pathview(gene.data=geneData_path00310,cpd.data=cpdData_path00310,
+            pathway.id="00310",species="hsa",out.suffix="mysuf",
+            keys.align="y",kegg.native=T,key.pos="topright",
+            limit=list(gene=c(-2,2),cpd=c(-2,2)),bins=list(gene=14,cpd=14),
+            high=list(gene="green",cpd="blue"),mid=list(gene="grey29",cpd="grey29"),
+            low=list(gene="red",cpd="#FFB533"))
 
 ########### Add / fix ChEBIs ###########
 metabKey2<-metabKey
