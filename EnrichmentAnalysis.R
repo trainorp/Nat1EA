@@ -233,7 +233,7 @@ for(path in keggUniquePaths){
 
 ########### KEGG Set Enrichment Analysis ###########
 comparisonDf<-as.data.frame(cbind(comparisons,comparisons2))
-for(i in 2:length(comparisonDf)){
+for(i in 1:nrow(comparisonDf)){
   # Which comparison (separate for metabolites vs. transcripts)
   comparison<-comparisonDf$comparisons[i]
   comparison2<-comparisonDf$comparisons2[i]
