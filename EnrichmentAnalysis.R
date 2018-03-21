@@ -156,7 +156,7 @@ for(i in 1:length(metabs)){
   diff1<-as.data.frame(pairs(emmeans(lm1,"pheno")))
   for(comparison in comparisons){
     diffs$FC[diffs$metab==metabs[i] & diffs$comparison==comparison]<-
-      diff1$estimate[diff1$contrast==paste0("Scrambled - ",comparison)]
+      (-diff1$estimate[diff1$contrast==paste0("Scrambled - ",comparison)])
     diffs$pVal[diffs$metab==metabs[i] & diffs$comparison==comparison]<-
       diff1$p.value[diff1$contrast==paste0("Scrambled - ",comparison)]
   }
@@ -181,6 +181,7 @@ for(comparison in comparisons){
   diffs<-cbind(diffs,ord=1:nrow(diffs))
   names(diffs)[names(diffs)=="ord"]<-paste0("ord_",comparison)
 }
+write.csv(diffs,file="~/gdrive/BearOmics2/EnrichmentAnalysis/Tables/diffs.csv",row.names=FALSE)
 
 ########### Transcript Differential Expression ############
 S_Up<-read.table(file="../data/CONTROL_UP_VS_CONTROL_S_ALL.txt",header=TRUE,sep="\t")
@@ -301,28 +302,6 @@ for(i in 1:nrow(comparisonDf)){
   }
 }
 
-# metabolism example: Lysine degredation map00310
-# plotEnrichment(keggMetabSet[["map00310"]],metabStats)
-# plotEnrichment(keggGeneSet[["path:hsa00310"]],geneStats)
-# path00310_Metabs<-diffs[diffs$kegg %in% keggMetabSet[["map00310"]],]
-# path00310_Genes<-S_Up[S_Up$ENTREZ.ID %in% keggGeneSet[["path:hsa00310"]],]
-# write.table(path00310_Metabs[,c("kegg","SvsUFC")],file="path00310_Metabs.txt",
-#             row.names=FALSE,sep="\t")
-# write.table(path00310_Genes[,c("ENTREZ.ID","logFC")],file="path00310_Genes.txt",
-#             row.names=FALSE,sep="\t")
-
-########### Ex Pathview ###########
-geneData_path00310<-as.numeric(path00310_Genes$logFC)
-names(geneData_path00310)<-as.character(path00310_Genes$ENTREZ.ID)
-cpdData_path00310<-as.numeric(path00310_Metabs$SvsUFC)
-names(cpdData_path00310)<-as.character(path00310_Metabs$kegg)
-pv.out<-pathview(gene.data=geneData_path00310,cpd.data=cpdData_path00310,
-            pathway.id="00310",species="hsa",out.suffix="mysuf",
-            keys.align="y",kegg.native=T,key.pos="topright",
-            limit=list(gene=c(-2,2),cpd=c(-2,2)),bins=list(gene=14,cpd=14),
-            high=list(gene="green",cpd="blue"),mid=list(gene="grey29",cpd="grey29"),
-            low=list(gene="red",cpd="#FFB533"))
-
 ########### Add / fix ChEBIs ###########
 metabKey2<-metabKey
 
@@ -344,16 +323,3 @@ names(metabStats)<-diffs$ChEBI2
 metabStats<-metabStats[!is.na(names(metabStats))]
 
 metabGSEA<-fgsea(metabSet,metabStats,nperm = 1000)
-
-########### Example GSEA using ReactomePA ###########
-# Over representation (hypergeometric):
-S_Up3<-S_Up %>% filter(p_value<.05)
-over_S_Up<-as.data.frame(enrichPathway(S_Up3$ENTREZ.ID,pvalueCutoff=.2,readable=TRUE))
-
-# Actual GSEA
-gse_S_Up<-gsePathway(geneList=S_Up2b,nPerm=1000,minGSSize=10,pvalueCutoff=0.25,
-           pAdjustMethod="BH",verbose=TRUE)
-gseSum_S_Up<-as.data.frame(gse_S_Up)
-gseaplot(gse_S_Up,geneSetID="R-HSA-174824")
-
-# Need to see fgsea::fgsea
