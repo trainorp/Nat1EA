@@ -1,8 +1,8 @@
 ########### Prereqs ###########
 library(tidyverse)
-library(ReactomePA)
-library(curl)
-library(reactome.db)
+# library(ReactomePA)
+# library(curl)
+# library(reactome.db)
 library(fgsea)
 library(emmeans)
 library(KEGGREST)
@@ -181,7 +181,7 @@ for(comparison in comparisons){
   diffs<-cbind(diffs,ord=1:nrow(diffs))
   names(diffs)[names(diffs)=="ord"]<-paste0("ord_",comparison)
 }
-write.csv(diffs,file="~/gdrive/BearOmics2/EnrichmentAnalysis/Tables/diffs.csv",row.names=FALSE)
+# write.csv(diffs,file="~/gdrive/BearOmics2/EnrichmentAnalysis/Tables/diffs.csv",row.names=FALSE)
 
 ########### Transcript Differential Expression ############
 S_Up<-read.table(file="../data/CONTROL_UP_VS_CONTROL_S_ALL.txt",header=TRUE,sep="\t")
@@ -287,12 +287,13 @@ for(i in 1:nrow(comparisonDf)){
     names(geneData)<-as.character(path_Genes$ENTREZ.ID)
     
     tryCatch({
-      pv.out<-pathview(gene.data=geneData,cpd.data=cpdData,
-                       pathway.id=path,species="hsa",out.suffix=paste0(comparison),
-                       keys.align="y",kegg.native=T,key.pos="topright",
-                       limit=list(gene=c(-2,2),cpd=c(-2,2)),bins=list(gene=14,cpd=14),
-                       high=list(gene="green",cpd="blue"),mid=list(gene="grey50",cpd="grey50"),
-                       low=list(gene="red",cpd="#FFB533"))
+      # Commented out for three way analysis
+      # pv.out<-pathview(gene.data=geneData,cpd.data=cpdData,
+      #                  pathway.id=path,species="hsa",out.suffix=paste0(comparison),
+      #                  keys.align="y",kegg.native=T,key.pos="topright",
+      #                  limit=list(gene=c(-2,2),cpd=c(-2,2)),bins=list(gene=14,cpd=14),
+      #                  high=list(gene="green",cpd="blue"),mid=list(gene="grey50",cpd="grey50"),
+      #                  low=list(gene="red",cpd="#FFB533"))
     },
     error=function(e){
       badPath<-c(badPath,path)
@@ -302,24 +303,28 @@ for(i in 1:nrow(comparisonDf)){
   }
 }
 
-########### Add / fix ChEBIs ###########
-metabKey2<-metabKey
-
-# Finished 1-30:
-
-
-########### fgsea with custom set from Reactome ###########
-diffs$ChEBI2<-sapply(strsplit(diffs$ChEBI,";"),function(x) x[1])
-
-# Make list of sets
-chebiReact$ChEBI<-as.character(chebiReact$ChEBI)
-metabSet<-list()
-uniquePaths<-unique(chebiReact$pathID)
-for(path in uniquePaths){
-  metabSet[[path]]<-unique(chebiReact$ChEBI[chebiReact$pathID==path])
+########### Specific 3 way analyses ###########
+# 00310,00564,00250,00600,00591; S vs U, S vs C19, & S vs C50 
+pathList<-c("00310","00564","00250","00600","00591")
+setwd("~/gdrive/BearOmics2/EnrichmentAnalysis/KEGGplots/")
+comparison1<-"CRISPR-2-19"
+comparison2<-"CRISPR-5-50"
+for(path in pathList){
+  # Metabolite data:
+  path_Metabs<-diffs[diffs$kegg %in% keggMetabSet[[paste0("map",path)]],]
+  cpdData<-rbind(path_Metabs[,paste0("FC_",comparison1)],
+                 path_Metabs[,paste0("FC_",comparison2)])
+  colnames(cpdData)<-path_Metabs$kegg
+  
+  # Gene data:
+  path_Genes<-geneDf[geneDf$ENTREZ.ID %in% keggGeneSet[[paste0("path:hsa",path)]],]
+  geneData<-as.numeric(path_Genes$logFC)
+  names(geneData)<-as.character(path_Genes$ENTREZ.ID)
+  
+  pv.out<-pathview(gene.data=geneData,cpd.data=cpdData,
+                   pathway.id=path,species="hsa",out.suffix=paste0(comparison),
+                   keys.align="y",kegg.native=T,key.pos="topright",
+                   limit=list(gene=c(-2,2),cpd=c(-2,2)),bins=list(gene=14,cpd=14),
+                   high=list(gene="green",cpd="blue"),mid=list(gene="grey50",cpd="grey50"),
+                   low=list(gene="red",cpd="#FFB533"))
 }
-metabStats<-diffs$SvsU
-names(metabStats)<-diffs$ChEBI2
-metabStats<-metabStats[!is.na(names(metabStats))]
-
-metabGSEA<-fgsea(metabSet,metabStats,nperm = 1000)
